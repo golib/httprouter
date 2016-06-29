@@ -76,9 +76,7 @@
 //  thirdValue := ps[2].Value // the value of the 3rd parameter
 package httprouter
 
-import (
-	"net/http"
-)
+import "net/http"
 
 // Handle is a function that can be registered to a route to handle HTTP
 // requests. Like http.HandlerFunc, but has a third parameter for the values of
@@ -275,22 +273,107 @@ func (r *Router) ServeFiles(path string, root http.FileSystem) {
 	})
 }
 
-func (r *Router) recv(w http.ResponseWriter, req *http.Request) {
-	if rcv := recover(); rcv != nil {
-		r.PanicHandler(w, req, rcv)
-	}
-}
-
 // Lookup allows the manual lookup of a method + path combo.
 // This is e.g. useful to build a framework around this router.
 // If the path was found, it returns the handle function and the path parameter
-// values. Otherwise the third return value indicates whether a redirection to
-// the same path with an extra / without the trailing slash should be performed.
+// values.
+// NOTE: It returns handle when the third returned value indicates a redirection to
+// the same path with / without the trailing slash should be performed.
 func (r *Router) Lookup(method, path string) (Handle, Params, bool) {
 	if root := r.trees[method]; root != nil {
 		return root.getValue(path)
 	}
+
 	return nil, nil, false
+}
+
+// ServeHTTP makes the router implement the http.Handler interface.
+func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if r.PanicHandler != nil {
+		defer r.recovery(w, req)
+	}
+
+	path := req.URL.Path
+
+	if root := r.trees[req.Method]; root != nil {
+		handle, ps, tsr := root.getValue(path)
+
+		if handle != nil {
+			if !tsr || !r.RedirectTrailingSlash {
+				handle(w, req, ps)
+				return
+			}
+
+			// Permanent redirect, request with GET method
+			code := http.StatusMovedPermanently
+			if req.Method != "GET" {
+				// Temporary redirect, request with same method
+				// As of Go 1.3, Go does not support status code 308.
+				code = http.StatusTemporaryRedirect
+			}
+
+			if len(path) > 1 && path[len(path)-1] == '/' {
+				req.URL.Path = path[:len(path)-1]
+			} else {
+				req.URL.Path = path + "/"
+			}
+
+			// redirect trailing slash pattern
+			http.Redirect(w, req, req.URL.String(), code)
+			return
+		}
+
+		// Try to fix the request path
+		if r.RedirectFixedPath && req.Method != "CONNECT" && path != "/" {
+			fixedPath, found := root.findCaseInsensitivePath(
+				CleanPath(path),
+				r.RedirectTrailingSlash,
+			)
+			if found {
+				// Permanent redirect, request with GET method
+				code := http.StatusMovedPermanently
+				if req.Method != "GET" {
+					// Temporary redirect, request with same method
+					// As of Go 1.3, Go does not support status code 308.
+					code = http.StatusTemporaryRedirect
+				}
+
+				req.URL.Path = string(fixedPath)
+
+				http.Redirect(w, req, req.URL.String(), code)
+				return
+			}
+		}
+	}
+
+	if req.Method == "OPTIONS" {
+		// Handle OPTIONS requests
+		if r.HandleOPTIONS {
+			if allow := r.allowed(path, req.Method); len(allow) > 0 {
+				w.Header().Set("Allow", allow)
+				return
+			}
+		}
+	} else {
+		// Handle 405
+		if r.HandleMethodNotAllowed {
+			if allow := r.allowed(path, req.Method); len(allow) > 0 {
+				w.Header().Set("Allow", allow)
+				if r.MethodNotAllowed != nil {
+					r.MethodNotAllowed.ServeHTTP(w, req)
+				} else {
+					http.Error(w,
+						http.StatusText(http.StatusMethodNotAllowed),
+						http.StatusMethodNotAllowed,
+					)
+				}
+				return
+			}
+		}
+	}
+
+	// Handle 404
+	r.notfound(w, req)
 }
 
 func (r *Router) allowed(path, reqMethod string) (allow string) {
@@ -331,81 +414,16 @@ func (r *Router) allowed(path, reqMethod string) (allow string) {
 	return
 }
 
-// ServeHTTP makes the router implement the http.Handler interface.
-func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	if r.PanicHandler != nil {
-		defer r.recv(w, req)
-	}
-
-	path := req.URL.Path
-
-	if root := r.trees[req.Method]; root != nil {
-		if handle, ps, tsr := root.getValue(path); handle != nil {
-			handle(w, req, ps)
-			return
-		} else if req.Method != "CONNECT" && path != "/" {
-			code := 301 // Permanent redirect, request with GET method
-			if req.Method != "GET" {
-				// Temporary redirect, request with same method
-				// As of Go 1.3, Go does not support status code 308.
-				code = 307
-			}
-
-			if tsr && r.RedirectTrailingSlash {
-				if len(path) > 1 && path[len(path)-1] == '/' {
-					req.URL.Path = path[:len(path)-1]
-				} else {
-					req.URL.Path = path + "/"
-				}
-				http.Redirect(w, req, req.URL.String(), code)
-				return
-			}
-
-			// Try to fix the request path
-			if r.RedirectFixedPath {
-				fixedPath, found := root.findCaseInsensitivePath(
-					CleanPath(path),
-					r.RedirectTrailingSlash,
-				)
-				if found {
-					req.URL.Path = string(fixedPath)
-					http.Redirect(w, req, req.URL.String(), code)
-					return
-				}
-			}
-		}
-	}
-
-	if req.Method == "OPTIONS" {
-		// Handle OPTIONS requests
-		if r.HandleOPTIONS {
-			if allow := r.allowed(path, req.Method); len(allow) > 0 {
-				w.Header().Set("Allow", allow)
-				return
-			}
-		}
-	} else {
-		// Handle 405
-		if r.HandleMethodNotAllowed {
-			if allow := r.allowed(path, req.Method); len(allow) > 0 {
-				w.Header().Set("Allow", allow)
-				if r.MethodNotAllowed != nil {
-					r.MethodNotAllowed.ServeHTTP(w, req)
-				} else {
-					http.Error(w,
-						http.StatusText(http.StatusMethodNotAllowed),
-						http.StatusMethodNotAllowed,
-					)
-				}
-				return
-			}
-		}
-	}
-
-	// Handle 404
+func (r *Router) notfound(w http.ResponseWriter, req *http.Request) {
 	if r.NotFound != nil {
 		r.NotFound.ServeHTTP(w, req)
 	} else {
 		http.NotFound(w, req)
+	}
+}
+
+func (r *Router) recovery(w http.ResponseWriter, req *http.Request) {
+	if rcv := recover(); rcv != nil {
+		r.PanicHandler(w, req, rcv)
 	}
 }

@@ -484,7 +484,7 @@ func TestRouterLookup(t *testing.T) {
 	}
 
 	handle, _, tsr = router.Lookup("GET", "/user/gopher/")
-	if handle != nil {
+	if handle != nil && !tsr {
 		t.Fatalf("Got handle for unregistered pattern: %v", handle)
 	}
 	if !tsr {
