@@ -40,18 +40,30 @@ type testRequests []struct {
 
 func checkRequests(t *testing.T, tree *node, requests testRequests) {
 	for _, request := range requests {
-		handler, ps, _ := tree.getValue(request.path)
+		handler, ps, tsr := tree.getValue(request.path)
 
-		if handler == nil {
-			if !request.nilHandler {
-				t.Errorf("handle mismatch for route '%s': Expected non-nil handle", request.path)
+		if tsr {
+			if handler != nil {
+				if request.nilHandler {
+					t.Errorf("handle mismatch for route '%s': Expected non-nil handle", request.path)
+				}
+			} else {
+				if !request.nilHandler {
+					t.Errorf("handle mismatch for route '%s': Expected nil handle", request.path)
+				}
 			}
-		} else if request.nilHandler {
-			t.Errorf("handle mismatch for route '%s': Expected nil handle", request.path)
 		} else {
-			handler(nil, nil, nil)
-			if fakeHandlerValue != request.route {
-				t.Errorf("handle mismatch for route '%s': Wrong handle (%s != %s)", request.path, fakeHandlerValue, request.route)
+			if handler == nil {
+				if !request.nilHandler {
+					t.Errorf("handle mismatch for route '%s': Expected non-nil handle", request.path)
+				}
+			} else if request.nilHandler {
+				t.Errorf("handle mismatch for route '%s': Expected nil handle", request.path)
+			} else {
+				handler(nil, nil, nil)
+				if fakeHandlerValue != request.route {
+					t.Errorf("handle mismatch for route '%s': Wrong handle (%s != %s)", request.path, fakeHandlerValue, request.route)
+				}
 			}
 		}
 
@@ -180,13 +192,13 @@ func TestTreeWildcard(t *testing.T) {
 	checkRequests(t, tree, testRequests{
 		{"/", false, "/", nil},
 		{"/cmd/test/", false, "/cmd/:tool/", Params{Param{"tool", "test"}}},
-		{"/cmd/test", true, "", Params{Param{"tool", "test"}}},
+		{"/cmd/test", false, "/cmd/:tool/", Params{Param{"tool", "test"}}},
 		{"/cmd/test/3", false, "/cmd/:tool/:sub", Params{Param{"tool", "test"}, Param{"sub", "3"}}},
 		{"/src/", false, "/src/*filepath", Params{Param{"filepath", ""}}},
 		{"/src/some/file.png", false, "/src/*filepath", Params{Param{"filepath", "some/file.png"}}},
 		{"/search/", false, "/search/", nil},
 		{"/search/someth!ng+in+ünìcodé", false, "/search/:query", Params{Param{"query", "someth!ng+in+ünìcodé"}}},
-		{"/search/someth!ng+in+ünìcodé/", true, "", Params{Param{"query", "someth!ng+in+ünìcodé"}}},
+		{"/search/someth!ng+in+ünìcodé/", false, "/search/:query", Params{Param{"query", "someth!ng+in+ünìcodé"}}},
 		{"/user_gopher", false, "/user_:name", Params{Param{"name", "gopher"}}},
 		{"/user_gopher/about", false, "/user_:name/about", Params{Param{"name", "gopher"}}},
 		{"/files/js/inc/framework.js", false, "/files/:dir/*filepath", Params{Param{"dir", "js"}, Param{"filepath", "inc/framework.js"}}},
@@ -433,7 +445,7 @@ func TestTreeTrailingSlashRedirect(t *testing.T) {
 	}
 	for _, route := range tsrRoutes {
 		handler, _, tsr := tree.getValue(route)
-		if handler != nil {
+		if handler != nil && !tsr {
 			t.Fatalf("non-nil handler for TSR route '%s", route)
 		} else if !tsr {
 			t.Errorf("expected TSR recommendation for route '%s'", route)

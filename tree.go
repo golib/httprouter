@@ -320,12 +320,15 @@ func (n *node) insertChild(numParams uint8, path, fullPath string, handle Handle
 // If no handle can be found, a TSR (trailing slash redirect) recommendation is
 // made if a handle exists with an extra (without the) trailing slash for the
 // given path.
+// It returns handle also if a TSR is true. Its useful for quick fallback strategy.
 func (n *node) getValue(path string) (handle Handle, p Params, tsr bool) {
 walk: // outer loop for walking the tree
 	for {
-		if len(path) > len(n.path) {
+		switch {
+		case len(path) > len(n.path):
 			if path[:len(n.path)] == n.path {
 				path = path[len(n.path):]
+
 				// If this node does not have a wildcard (param or catchAll)
 				// child,  we can just look up the next child node and continue
 				// to walk down the tree
@@ -342,26 +345,31 @@ walk: // outer loop for walking the tree
 					// We can recommend to redirect to the same URL without a
 					// trailing slash if a leaf exists for that path.
 					tsr = (path == "/" && n.handle != nil)
-					return
+					if tsr {
+						handle = n.handle
+					}
 
+					return
 				}
 
 				// handle wildcard child
 				n = n.children[0]
 				switch n.nType {
 				case param:
-					// find param end (either '/' or path end)
-					end := 0
-					for end < len(path) && path[end] != '/' {
-						end++
-					}
-
 					// save param value
 					if p == nil {
 						// lazy allocation
 						p = make(Params, 0, n.maxParams)
 					}
+
+					// find param end (either '/' or path end)
+					end := strings.IndexByte(path, '/')
+					if end == -1 {
+						end = len(path)
+					}
+
 					i := len(p)
+
 					p = p[:i+1] // expand slice within preallocated capacity
 					p[i].Key = n.path[1:]
 					p[i].Value = path[:end]
@@ -371,21 +379,34 @@ walk: // outer loop for walking the tree
 						if len(n.children) > 0 {
 							path = path[end:]
 							n = n.children[0]
+
 							continue walk
 						}
 
-						// ... but we can't
+						// ... oops, we can't for path such as /:key/value/
 						tsr = (len(path) == end+1)
+						if tsr {
+							handle = n.handle
+						}
+
 						return
 					}
 
-					if handle = n.handle; handle != nil {
+					if n.handle != nil {
+						handle = n.handle
+
 						return
-					} else if len(n.children) == 1 {
-						// No handle found. Check if a handle for this path + a
-						// trailing slash exists for TSR recommendation
+					}
+
+					// No handle found. Check if a handle for this path + a
+					// trailing slash exists for TSR recommendation
+					if len(n.children) == 1 {
 						n = n.children[0]
+
 						tsr = (n.path == "/" && n.handle != nil)
+						if tsr {
+							handle = n.handle
+						}
 					}
 
 					return
@@ -396,27 +417,35 @@ walk: // outer loop for walking the tree
 						// lazy allocation
 						p = make(Params, 0, n.maxParams)
 					}
+
 					i := len(p)
 					p = p[:i+1] // expand slice within preallocated capacity
 					p[i].Key = n.path[2:]
 					p[i].Value = path[1:]
 
 					handle = n.handle
+
 					return
 
 				default:
 					panic("invalid node type")
+
 				}
 			}
-		} else if path == n.path {
+
+		case path == n.path:
 			// We should have reached the node containing the handle.
 			// Check if this node has a handle registered.
-			if handle = n.handle; handle != nil {
+			if n.handle != nil {
+				handle = n.handle
+
 				return
 			}
 
+			// redirect /name/ to /name
 			if path == "/" && n.wildChild && n.nType != root {
 				tsr = true
+
 				return
 			}
 
@@ -425,20 +454,41 @@ walk: // outer loop for walking the tree
 			for i := 0; i < len(n.indices); i++ {
 				if n.indices[i] == '/' {
 					n = n.children[i]
-					tsr = (len(n.path) == 1 && n.handle != nil) ||
-						(n.nType == catchAll && n.children[0].handle != nil)
+
+					tsr = len(n.path) == 1 && n.handle != nil
+					if tsr {
+						handle = n.handle
+
+						return
+					}
+
+					tsr = n.nType == catchAll && n.children[0].handle != nil
+					if tsr {
+						handle = n.children[0].handle
+					}
+
 					return
 				}
 			}
 
 			return
+
 		}
 
 		// Nothing found. We can recommend to redirect to the same URL with an
 		// extra trailing slash if a leaf exists for that path
-		tsr = (path == "/") ||
-			(len(n.path) == len(path)+1 && n.path[len(path)] == '/' &&
-				path == n.path[:len(n.path)-1] && n.handle != nil)
+
+		// redirect /pname/ to /pname
+		tsr = (path == "/")
+		if tsr {
+			return
+		}
+
+		tsr = len(n.path) == (len(path)+1) && n.path[len(path)] == '/' && path == n.path[:len(n.path)-1] && n.handle != nil
+		if tsr {
+			handle = n.handle
+		}
+
 		return
 	}
 }
