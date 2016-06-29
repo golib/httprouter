@@ -340,15 +340,19 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	path := req.URL.Path
 
 	if root := r.trees[req.Method]; root != nil {
-		if handle, ps, tsr := root.getValue(path); handle != nil {
+		handle, ps, tsr := root.getValue(path)
+		if handle != nil {
 			handle(w, req, ps)
 			return
-		} else if req.Method != "CONNECT" && path != "/" {
-			code := 301 // Permanent redirect, request with GET method
+		}
+
+		if req.Method != "CONNECT" && path != "/" {
+			// Permanent redirect, request with GET method
+			code := http.StatusMovedPermanently
 			if req.Method != "GET" {
 				// Temporary redirect, request with same method
 				// As of Go 1.3, Go does not support status code 308.
-				code = 307
+				code = http.StatusTemporaryRedirect
 			}
 
 			if tsr && r.RedirectTrailingSlash {
@@ -357,6 +361,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 				} else {
 					req.URL.Path = path + "/"
 				}
+
 				http.Redirect(w, req, req.URL.String(), code)
 				return
 			}
