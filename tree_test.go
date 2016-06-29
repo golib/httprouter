@@ -210,6 +210,30 @@ func TestTreeWildcard(t *testing.T) {
 	checkMaxParams(t, tree)
 }
 
+func TestTreeWildcardWithCatchAll(t *testing.T) {
+	tree := &node{}
+
+	routes := [...]string{
+		"/cmd/:tool",
+		"/cmd/:tool/*sub",
+	}
+	for _, route := range routes {
+		tree.addRoute(route, fakeHandler(route))
+	}
+
+	//printChildren(tree, "")
+
+	checkRequests(t, tree, testRequests{
+		{"/cmd/test/", false, "/cmd/:tool", Params{Param{"tool", "test"}}},
+		{"/cmd/test", false, "/cmd/:tool", Params{Param{"tool", "test"}}},
+		{"/cmd/test/3", false, "/cmd/:tool/*sub", Params{Param{"tool", "test"}, Param{"sub", "3"}}},
+		{"/cmd/test/3/index.html", false, "/cmd/:tool/*sub", Params{Param{"tool", "test"}, Param{"sub", "3/index.html"}}},
+	})
+
+	checkPriorities(t, tree)
+	checkMaxParams(t, tree)
+}
+
 func catchPanic(testFunc func()) (recv interface{}) {
 	defer func() {
 		recv = recover()

@@ -333,20 +333,20 @@ walk: // outer loop for walking the tree
 				// child,  we can just look up the next child node and continue
 				// to walk down the tree
 				if !n.wildChild {
+					// could we stop swift for path such as /name/
+					tsr = (path == "/" && n.handle != nil)
+					if tsr {
+						handle = n.handle
+
+						return
+					}
+
 					c := path[0]
 					for i := 0; i < len(n.indices); i++ {
 						if c == n.indices[i] {
 							n = n.children[i]
 							continue walk
 						}
-					}
-
-					// Nothing found.
-					// We can recommend to redirect to the same URL without a
-					// trailing slash if a leaf exists for that path.
-					tsr = (path == "/" && n.handle != nil)
-					if tsr {
-						handle = n.handle
 					}
 
 					return
@@ -376,17 +376,19 @@ walk: // outer loop for walking the tree
 
 					// we need to go deeper!
 					if end < len(path) {
+						// could we stop swift for path such as /:key/value/
+						tsr = (path[end:] == "/" && n.handle != nil)
+						if tsr {
+							handle = n.handle
+
+							return
+						}
+
 						if len(n.children) > 0 {
 							path = path[end:]
 							n = n.children[0]
 
 							continue walk
-						}
-
-						// ... oops, we can't for path such as /:key/value/
-						tsr = (len(path) == end+1)
-						if tsr {
-							handle = n.handle
 						}
 
 						return
@@ -455,14 +457,14 @@ walk: // outer loop for walking the tree
 				if n.indices[i] == '/' {
 					n = n.children[i]
 
-					tsr = len(n.path) == 1 && n.handle != nil
+					tsr = (len(n.path) == 1 && n.handle != nil)
 					if tsr {
 						handle = n.handle
 
 						return
 					}
 
-					tsr = n.nType == catchAll && n.children[0].handle != nil
+					tsr = (n.nType == catchAll && n.children[0].handle != nil)
 					if tsr {
 						handle = n.children[0].handle
 					}
@@ -484,7 +486,7 @@ walk: // outer loop for walking the tree
 			return
 		}
 
-		tsr = len(n.path) == (len(path)+1) && n.path[len(path)] == '/' && path == n.path[:len(n.path)-1] && n.handle != nil
+		tsr = (len(n.path) == (len(path)+1) && n.path[len(path)] == '/' && path == n.path[:len(n.path)-1] && n.handle != nil)
 		if tsr {
 			handle = n.handle
 		}
