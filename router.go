@@ -10,9 +10,10 @@
 //
 //  import (
 //      "fmt"
-//      "github.com/julienschmidt/httprouter"
 //      "net/http"
 //      "log"
+//
+//      "github.com/julienschmidt/httprouter"
 //  )
 //
 //  func Index(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
@@ -94,14 +95,27 @@ type Param struct {
 // It is therefore safe to read values by the index.
 type Params []Param
 
+// DefName returns the value and true of the first Param which key matches the given name.
+// If no matching Param is found, an empty string and false is returned.
+func (ps Params) DefName(name string) (string, bool) {
+	for _, p := range ps {
+		if p.Key == name {
+			return p.Value, true
+		}
+	}
+
+	return "", false
+}
+
 // ByName returns the value of the first Param which key matches the given name.
 // If no matching Param is found, an empty string is returned.
 func (ps Params) ByName(name string) string {
-	for i := range ps {
-		if ps[i].Key == name {
-			return ps[i].Value
+	for _, p := range ps {
+		if p.Key == name {
+			return p.Value
 		}
 	}
+
 	return ""
 }
 
