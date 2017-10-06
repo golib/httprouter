@@ -5,6 +5,8 @@
 
 package httprouter
 
+import "strings"
+
 // CleanPath is the URL version of path.Clean, it returns a canonical URL path
 // for p, eliminating . and .. elements.
 //
@@ -19,12 +21,13 @@ package httprouter
 //
 // If the result of this process is an empty string, "/" is returned
 func CleanPath(p string) string {
+	p = strings.TrimSpace(p)
+
 	// Turn empty string into "/"
 	if p == "" {
 		return "/"
 	}
 
-	n := len(p)
 	var buf []byte
 
 	// Invariants:
@@ -32,11 +35,15 @@ func CleanPath(p string) string {
 	//      writing to buf; w is index of next byte to write.
 
 	// path must start with '/'
-	r := 1
-	w := 1
+	var (
+		n = len(p)
+		r = 1
+		w = 1
+	)
 
 	if p[0] != '/' {
 		r = 0
+
 		buf = make([]byte, n+1)
 		buf[0] = '/'
 	}
