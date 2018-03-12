@@ -1,4 +1,6 @@
-# HttpRouter [![Build Status](https://travis-ci.org/julienschmidt/httprouter.svg?branch=master)](https://travis-ci.org/julienschmidt/httprouter) [![Coverage](http://gocover.io/_badge/github.com/julienschmidt/httprouter?0)](http://gocover.io/github.com/julienschmidt/httprouter) [![GoDoc](https://godoc.org/github.com/julienschmidt/httprouter?status.svg)](http://godoc.org/github.com/julienschmidt/httprouter)
+# HttpRouter [![Build Status](https://travis-ci.org/golib/httprouter.svg?branch=master)](https://travis-ci.org/golib/httprouter)
+
+**DEPRECATED** This repo has deprecated since we have released a new package, named [httpdispatch](https://github.com/dolab/httpdispatch), replacing it used in [gogo](https://github.com/dolag/gogo). 
 
 HttpRouter is a lightweight high performance HTTP request router (also called *multiplexer* or just *mux* for short) for [Go](https://golang.org/).
 
