@@ -77,47 +77,14 @@
 //  thirdValue := ps[2].Value // the value of the 3rd parameter
 package httprouter
 
-import "net/http"
+import (
+	"net/http"
+)
 
 // Handle is a function that can be registered to a route to handle HTTP
 // requests. Like http.HandlerFunc, but has a third parameter for the values of
 // wildcards (variables).
 type Handle func(http.ResponseWriter, *http.Request, Params)
-
-// Param is a single URL parameter, consisting of a key and a value.
-type Param struct {
-	Key   string
-	Value string
-}
-
-// Params is a Param-slice, as returned by the router.
-// The slice is ordered, the first URL parameter is also the first slice value.
-// It is therefore safe to read values by the index.
-type Params []Param
-
-// DefName returns the value and true of the first Param which key matches the given name.
-// If no matching Param is found, an empty string and false is returned.
-func (ps Params) DefName(name string) (string, bool) {
-	for _, p := range ps {
-		if p.Key == name {
-			return p.Value, true
-		}
-	}
-
-	return "", false
-}
-
-// ByName returns the value of the first Param which key matches the given name.
-// If no matching Param is found, an empty string is returned.
-func (ps Params) ByName(name string) string {
-	for _, p := range ps {
-		if p.Key == name {
-			return p.Value
-		}
-	}
-
-	return ""
-}
 
 // Router is a http.Handler which can be used to dispatch requests to different
 // handler functions via configurable routes
@@ -152,7 +119,7 @@ type Router struct {
 
 	// If enabled, the router automatically replies to OPTIONS requests.
 	// Custom OPTIONS handlers take priority over automatic replies.
-	HandleOPTIONS bool
+	HandleMethodOPTIONS bool
 
 	// Configurable http.Handler which is called when no matching route is
 	// found. If it is not set, http.NotFound is used.
@@ -183,7 +150,7 @@ func New() *Router {
 		RedirectTrailingSlash:  true,
 		RedirectFixedPath:      true,
 		HandleMethodNotAllowed: true,
-		HandleOPTIONS:          true,
+		HandleMethodOPTIONS:    true,
 	}
 }
 
@@ -232,7 +199,7 @@ func (r *Router) DELETE(path string, handle Handle) {
 // communication with a proxy).
 func (r *Router) Handle(method, path string, handle Handle) {
 	if path[0] != '/' {
-		panic("path must begin with '/' in path '" + path + "'")
+		panic("path must begin with '/' in '" + path + "'")
 	}
 
 	if r.trees == nil {
@@ -242,21 +209,24 @@ func (r *Router) Handle(method, path string, handle Handle) {
 	root := r.trees[method]
 	if root == nil {
 		root = new(node)
+
 		r.trees[method] = root
 	}
 
 	root.addRoute(path, handle)
 }
 
-// Handler is an adapter which allows the usage of an http.Handler as a
-// request handle.
-func (r *Router) Handler(method, path string, handler http.Handler) {
-	r.Handle(method, path,
-		func(w http.ResponseWriter, req *http.Request, _ Params) {
-			handler.ServeHTTP(w, req)
-		},
-	)
-}
+// // Handler is an adapter which allows the usage of an http.Handler as a
+// // request handle.
+// func (r *Router) Handler(method, path string, handler http.Handler) {
+// 	r.Handle(method, path,
+// 		func(w http.ResponseWriter, req *http.Request, ps Params) {
+// 			ctx := context.WithValue(req.Context(), ctxParam, ps)
+
+// 			handler.ServeHTTP(w, req.WithContext(ctx))
+// 		},
+// 	)
+// }
 
 // HandlerFunc is an adapter which allows the usage of an http.HandlerFunc as a
 // request handle.
@@ -266,7 +236,7 @@ func (r *Router) HandlerFunc(method, path string, handler http.HandlerFunc) {
 
 // ServeFiles serves files from the given file system root.
 // The path must end with "/*filepath", files are then served from the local
-// path /defined/root/dir/*filepath.
+// path /path/to/root/*filepath.
 // For example if root is "/etc" and *filepath is "passwd", the local file
 // "/etc/passwd" would be served.
 // Internally a http.FileServer is used, therefore http.NotFound is used instead
@@ -276,13 +246,14 @@ func (r *Router) HandlerFunc(method, path string, handler http.HandlerFunc) {
 //     router.ServeFiles("/src/*filepath", http.Dir("/var/www"))
 func (r *Router) ServeFiles(path string, root http.FileSystem) {
 	if len(path) < 10 || path[len(path)-10:] != "/*filepath" {
-		panic("path must end with /*filepath in path '" + path + "'")
+		panic("path must end with /*filepath in '" + path + "'")
 	}
 
 	fileServer := http.FileServer(root)
 
 	r.GET(path, func(w http.ResponseWriter, req *http.Request, ps Params) {
 		req.URL.Path = ps.ByName("filepath")
+
 		fileServer.ServeHTTP(w, req)
 	})
 }
@@ -361,9 +332,10 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if req.Method == "OPTIONS" {
-		// Handle OPTIONS requests
-		if r.HandleOPTIONS {
-			if allow := r.allowed(path, req.Method); len(allow) > 0 {
+		// Handle OPTIONS
+		if r.HandleMethodOPTIONS {
+			allow := r.allowed(path, req.Method)
+			if len(allow) > 0 {
 				w.Header().Set("Allow", allow)
 				return
 			}
@@ -371,8 +343,10 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	} else {
 		// Handle 405
 		if r.HandleMethodNotAllowed {
-			if allow := r.allowed(path, req.Method); len(allow) > 0 {
+			allow := r.allowed(path, req.Method)
+			if len(allow) > 0 {
 				w.Header().Set("Allow", allow)
+
 				if r.MethodNotAllowed != nil {
 					r.MethodNotAllowed.ServeHTTP(w, req)
 				} else {
