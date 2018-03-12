@@ -77,7 +77,9 @@
 //  thirdValue := ps[2].Value // the value of the 3rd parameter
 package httprouter
 
-import "net/http"
+import (
+	"net/http"
+)
 
 // Handle is a function that can be registered to a route to handle HTTP
 // requests. Like http.HandlerFunc, but has a third parameter for the values of
@@ -197,7 +199,7 @@ func (r *Router) DELETE(path string, handle Handle) {
 // communication with a proxy).
 func (r *Router) Handle(method, path string, handle Handle) {
 	if path[0] != '/' {
-		panic("path must begin with '/' in path '" + path + "'")
+		panic("path must begin with '/' in '" + path + "'")
 	}
 
 	if r.trees == nil {
@@ -207,21 +209,24 @@ func (r *Router) Handle(method, path string, handle Handle) {
 	root := r.trees[method]
 	if root == nil {
 		root = new(node)
+
 		r.trees[method] = root
 	}
 
 	root.addRoute(path, handle)
 }
 
-// Handler is an adapter which allows the usage of an http.Handler as a
-// request handle.
-func (r *Router) Handler(method, path string, handler http.Handler) {
-	r.Handle(method, path,
-		func(w http.ResponseWriter, req *http.Request, _ Params) {
-			handler.ServeHTTP(w, req)
-		},
-	)
-}
+// // Handler is an adapter which allows the usage of an http.Handler as a
+// // request handle.
+// func (r *Router) Handler(method, path string, handler http.Handler) {
+// 	r.Handle(method, path,
+// 		func(w http.ResponseWriter, req *http.Request, ps Params) {
+// 			ctx := context.WithValue(req.Context(), ctxParam, ps)
+
+// 			handler.ServeHTTP(w, req.WithContext(ctx))
+// 		},
+// 	)
+// }
 
 // HandlerFunc is an adapter which allows the usage of an http.HandlerFunc as a
 // request handle.
@@ -231,7 +236,7 @@ func (r *Router) HandlerFunc(method, path string, handler http.HandlerFunc) {
 
 // ServeFiles serves files from the given file system root.
 // The path must end with "/*filepath", files are then served from the local
-// path /defined/root/dir/*filepath.
+// path /path/to/root/*filepath.
 // For example if root is "/etc" and *filepath is "passwd", the local file
 // "/etc/passwd" would be served.
 // Internally a http.FileServer is used, therefore http.NotFound is used instead
@@ -241,13 +246,14 @@ func (r *Router) HandlerFunc(method, path string, handler http.HandlerFunc) {
 //     router.ServeFiles("/src/*filepath", http.Dir("/var/www"))
 func (r *Router) ServeFiles(path string, root http.FileSystem) {
 	if len(path) < 10 || path[len(path)-10:] != "/*filepath" {
-		panic("path must end with /*filepath in path '" + path + "'")
+		panic("path must end with /*filepath in '" + path + "'")
 	}
 
 	fileServer := http.FileServer(root)
 
 	r.GET(path, func(w http.ResponseWriter, req *http.Request, ps Params) {
 		req.URL.Path = ps.ByName("filepath")
+
 		fileServer.ServeHTTP(w, req)
 	})
 }
@@ -326,9 +332,10 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if req.Method == "OPTIONS" {
-		// Handle OPTIONS requests
+		// Handle OPTIONS
 		if r.HandleMethodOPTIONS {
-			if allow := r.allowed(path, req.Method); len(allow) > 0 {
+			allow := r.allowed(path, req.Method)
+			if len(allow) > 0 {
 				w.Header().Set("Allow", allow)
 				return
 			}
@@ -336,8 +343,10 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	} else {
 		// Handle 405
 		if r.HandleMethodNotAllowed {
-			if allow := r.allowed(path, req.Method); len(allow) > 0 {
+			allow := r.allowed(path, req.Method)
+			if len(allow) > 0 {
 				w.Header().Set("Allow", allow)
+
 				if r.MethodNotAllowed != nil {
 					r.MethodNotAllowed.ServeHTTP(w, req)
 				} else {

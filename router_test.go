@@ -11,6 +11,8 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"testing"
+
+	"github.com/golib/assert"
 )
 
 type mockResponseWriter struct{}
@@ -29,40 +31,81 @@ func (m *mockResponseWriter) WriteString(s string) (n int, err error) {
 
 func (m *mockResponseWriter) WriteHeader(int) {}
 
-func TestParams(t *testing.T) {
-	ps := Params{
-		Param{"param1", "value1"},
-		Param{"param2", "value2"},
-		Param{"param3", "value3"},
-	}
-	for i := range ps {
-		if val := ps.ByName(ps[i].Key); val != ps[i].Value {
-			t.Errorf("Wrong value for %s: Got %s; Want %s", ps[i].Key, val, ps[i].Value)
-		}
-	}
-	if val := ps.ByName("noKey"); val != "" {
-		t.Errorf("Expected empty string for not found key; got: %s", val)
-	}
-}
-
 func TestRouter(t *testing.T) {
-	router := New()
-
 	routed := false
+	want := Params{Param{"name", "gopher"}}
+
+	router := New()
 	router.Handle("GET", "/user/:name", func(w http.ResponseWriter, r *http.Request, ps Params) {
 		routed = true
-		want := Params{Param{"name", "gopher"}}
+
 		if !reflect.DeepEqual(ps, want) {
 			t.Fatalf("wrong wildcard values: want %v, got %v", want, ps)
 		}
 	})
 
-	w := new(mockResponseWriter)
-
-	req, _ := http.NewRequest("GET", "/user/gopher", nil)
-	router.ServeHTTP(w, req)
+	r, _ := http.NewRequest("GET", "/user/gopher", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
 
 	if !routed {
+		t.Fatal("routing failed")
+	}
+}
+
+func BenchmarkRouter(b *testing.B) {
+	router := New()
+	router.Handle("GET", "/user/:name", func(w http.ResponseWriter, r *http.Request, ps Params) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	r, _ := http.NewRequest("GET", "/user/gopher", nil)
+	w := httptest.NewRecorder()
+	for i := 0; i < b.N; i++ {
+		router.ServeHTTP(w, r)
+	}
+}
+
+func TestRouterWithContext(t *testing.T) {
+	var (
+		routedForNamed = false
+		wantedForNamed = Params{Param{"name", "gopher"}}
+
+		routedForWildcard = false
+		wantedForWildcard = Params{Param{"filename", "path/to/gopher"}}
+	)
+
+	router := New()
+	router.HandlerFunc("GET", "/user/:name", func(w http.ResponseWriter, r *http.Request) {
+		routedForNamed = true
+
+		ps := ContextParams(r)
+		if !reflect.DeepEqual(ps, wantedForNamed) {
+			t.Fatalf("wrong named params: want %v, got %v", wantedForNamed, ps)
+		}
+	})
+	router.HandlerFunc("GET", "/static/*filename", func(w http.ResponseWriter, r *http.Request) {
+		routedForWildcard = true
+
+		ps := ContextParams(r)
+		if !reflect.DeepEqual(ps, wantedForWildcard) {
+			t.Fatalf("wrong wildcard params: want %v, got %v", wantedForWildcard, ps)
+		}
+	})
+
+	r, _ := http.NewRequest("GET", "/user/gopher", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+
+	if !routedForNamed {
+		t.Fatal("routing failed")
+	}
+
+	r, _ = http.NewRequest("GET", "/static/path/to/gopher", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+
+	if !routedForWildcard {
 		t.Fatal("routing failed")
 	}
 }
@@ -366,23 +409,47 @@ func TestRouterNotFound(t *testing.T) {
 	testRoutes := []struct {
 		route  string
 		code   int
-		header string
+		header map[string]string
 	}{
-		{"/path/", 301, "map[Location:[/path]]"},   // TSR -/
-		{"/dir", 301, "map[Location:[/dir/]]"},     // TSR +/
-		{"", 301, "map[Location:[/]]"},             // TSR +/
-		{"/PATH", 301, "map[Location:[/path]]"},    // Fixed Case
-		{"/DIR/", 301, "map[Location:[/dir/]]"},    // Fixed Case
-		{"/PATH/", 301, "map[Location:[/path]]"},   // Fixed Case -/
-		{"/DIR", 301, "map[Location:[/dir/]]"},     // Fixed Case +/
-		{"/../path", 301, "map[Location:[/path]]"}, // CleanPath
-		{"/nope", 404, ""},                         // NotFound
+		{"/path/", 301, map[string]string{
+			"Location":     "/path",
+			"Content-Type": "text/html; charset=utf-8",
+		}}, // TSR -/
+		{"/dir", 301, map[string]string{
+			"Location":     "/dir/",
+			"Content-Type": "text/html; charset=utf-8",
+		}}, // TSR +/
+		{"", 301, map[string]string{
+			"Location":     "/",
+			"Content-Type": "text/html; charset=utf-8",
+		}}, // TSR +/
+		{"/PATH", 301, map[string]string{
+			"Location":     "/path",
+			"Content-Type": "text/html; charset=utf-8",
+		}}, // Fixed Case
+		{"/DIR/", 301, map[string]string{
+			"Location":     "/dir/",
+			"Content-Type": "text/html; charset=utf-8",
+		}}, // Fixed Case
+		{"/PATH/", 301, map[string]string{
+			"Location":     "/path",
+			"Content-Type": "text/html; charset=utf-8",
+		}}, // Fixed Case -/
+		{"/DIR", 301, map[string]string{
+			"Location":     "/dir/",
+			"Content-Type": "text/html; charset=utf-8",
+		}}, // Fixed Case +/
+		{"/../path", 301, map[string]string{
+			"Location":     "/path",
+			"Content-Type": "text/html; charset=utf-8",
+		}}, // CleanPath
+		{"/nope", 404, map[string]string{}}, // NotFound
 	}
 	for _, tr := range testRoutes {
 		r, _ := http.NewRequest("GET", tr.route, nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, r)
-		if !(w.Code == tr.code && (w.Code == 404 || fmt.Sprint(w.Header()) == tr.header)) {
+		if !(w.Code == tr.code && w.Header().Get("Location") == tr.header["Location"]) {
 			t.Errorf("NotFound handling route %s failed: Code=%d, Header=%v", tr.route, w.Code, w.Header())
 		}
 	}
@@ -510,21 +577,24 @@ func (mfs *mockFileSystem) Open(name string) (http.File, error) {
 }
 
 func TestRouterServeFiles(t *testing.T) {
-	router := New()
 	mfs := &mockFileSystem{}
+	router := New()
 
-	recv := catchPanic(func() {
-		router.ServeFiles("/noFilepath", mfs)
+	t.Run("panic without /*filepath", func(t *testing.T) {
+		assert.Panics(t, func() {
+			router.ServeFiles("/:filepath", mfs)
+		}, "registering path not ending with '*filepath' did not panic")
 	})
-	if recv == nil {
-		t.Fatal("registering path not ending with '*filepath' did not panic")
-	}
 
-	router.ServeFiles("/*filepath", mfs)
-	w := new(mockResponseWriter)
-	r, _ := http.NewRequest("GET", "/favicon.ico", nil)
-	router.ServeHTTP(w, r)
-	if !mfs.opened {
-		t.Error("serving file failed")
-	}
+	t.Run("should work", func(t *testing.T) {
+		router.ServeFiles("/*filepath", mfs)
+
+		w := new(mockResponseWriter)
+		r, _ := http.NewRequest("GET", "/favicon.ico", nil)
+		router.ServeHTTP(w, r)
+
+		if !mfs.opened {
+			t.Error("serving file failed")
+		}
+	})
 }
