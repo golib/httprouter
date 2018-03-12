@@ -40,7 +40,7 @@ func ContextParams(r *http.Request) Params {
 	}
 
 	var params Params
-	if err := gob.NewDecoder(bytes.NewBuffer(data)).Decode(params); err != nil {
+	if err := gob.NewDecoder(bytes.NewBuffer(data)).Decode(&params); err != nil {
 		return nil
 	}
 
