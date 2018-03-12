@@ -580,21 +580,21 @@ func TestRouterServeFiles(t *testing.T) {
 	mfs := &mockFileSystem{}
 	router := New()
 
-	t.Run("panic without /*filepath", func(t *testing.T) {
-		assert.Panics(t, func() {
-			router.ServeFiles("/:filepath", mfs)
-		}, "registering path not ending with '*filepath' did not panic")
-	})
+	// t.Run("panic without /*filepath", func(t *testing.T) {
+	assert.Panics(t, func() {
+		router.ServeFiles("/:filepath", mfs)
+	}, "registering path not ending with '*filepath' did not panic")
+	// })
 
-	t.Run("should work", func(t *testing.T) {
-		router.ServeFiles("/*filepath", mfs)
+	// t.Run("should work", func(t *testing.T) {
+	router.ServeFiles("/*filepath", mfs)
 
-		w := new(mockResponseWriter)
-		r, _ := http.NewRequest("GET", "/favicon.ico", nil)
-		router.ServeHTTP(w, r)
+	w := new(mockResponseWriter)
+	r, _ := http.NewRequest("GET", "/favicon.ico", nil)
+	router.ServeHTTP(w, r)
 
-		if !mfs.opened {
-			t.Error("serving file failed")
-		}
-	})
+	if !mfs.opened {
+		t.Error("serving file failed")
+	}
+	// })
 }
