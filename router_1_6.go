@@ -31,17 +31,17 @@ func (r *Router) Handler(method, path string, handler http.Handler) {
 func ContextParams(r *http.Request) Params {
 	value := r.Header.Get(ctxParamKey)
 	if value == "" {
-		return
+		return nil
 	}
 
 	data, err := base64.RawURLEncoding.DecodeString(value)
 	if err != nil {
-		return
+		return nil
 	}
 
 	var params Params
 	if err := gob.NewDecoder(bytes.NewBuffer(data)).Decode(params); err != nil {
-		return
+		return nil
 	}
 
 	return params
